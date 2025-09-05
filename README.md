@@ -52,3 +52,6 @@ ATM_Simulator/
 │    └── mysql-connector-java-x.x.xx.jar
 │
 │── README.md
+<img width="421" height="375" alt="Screenshot 2025-09-05 120702" src="https://github.com/user-attachments/assets/df910c7a-b53b-47b0-924f-7d4a1df5672d" />
+
+
