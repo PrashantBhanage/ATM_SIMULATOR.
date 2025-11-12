@@ -1,154 +1,182 @@
+import javafx.application.Application;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.stage.Stage;
 import java.sql.*;
-import java.util.Scanner;
 
-public class ATM{
+/**
+ * ATM.java (GUI version)
+ * Simple JavaFX-based ATM interface connected to MySQL.
+ *
+ * Dependencies:
+ * - DBConnection.java (for getConnection())
+ * - MySQL DB with users & transactions tables.
+ */
+public class ATM extends Application {
+    private Stage stage;
     private Connection conn;
-    private Scanner sc;
+    private int userId = -1;
+    private String username = "";
 
-    public ATM(){
+    @Override
+    public void start(Stage stage) {
+        this.stage = stage;
         conn = DBConnection.getConnection();
-        sc = new Scanner(System.in);
+
+        stage.setTitle("ATM Machine");
+        stage.setScene(loginScene());
+        stage.setResizable(false);
+        stage.show();
     }
 
-    public void login(){
-        try{
-        System.out.println("Enter Username: ");
-        String username = sc.nextLine();
+    // ---------------------- LOGIN SCREEN ----------------------
+    private Scene loginScene() {
+        Label title = new Label("🏦 ATM Login");
+        TextField userField = new TextField();
+        userField.setPromptText("Username");
+        PasswordField pinField = new PasswordField();
+        pinField.setPromptText("PIN");
 
-        System.out.println("Enter PIN: ");
-        String pin = sc.nextLine();
+        Button loginBtn = new Button("Login");
+        Label msg = new Label();
 
-        String query = "SELECT * FROM users WHERE username = ? AND pin = ?";
-        PreparedStatement stmt = conn.prepareStatement(query);
-        stmt.setString(1, username);
-        stmt.setString(2, pin);
-
-        ResultSet rs = stmt.executeQuery();
-
-        if(rs.next()){
-            System.out.println("\n Login Successful! Welcome "+ username );
-            mainMenu(rs.getInt("id")); //pass user is
-        }else{
-            System.out.println("\n Invalid username or PIN");
-        }
-    }catch(Exception e){
-        e.printStackTrace();
-    }
-}
-
-private void mainMenu(int userId){
-    while(true){
-        System.out.println("\n ===ATM MENU===");
-        System.out.println("1. Check Balance");
-        System.out.println("2. Deposit");
-        System.out.println("3. Withdraw");
-        System.out.println("4. Transaction Histroy");
-        System.out.println("5. Exit");
-        System.out.println("Choose Option: ");
-
-        int choice = sc.nextInt();
-
-        switch(choice){
-            case 1: checkBalance(userId); break;
-            case 2: deposit(userId); break;
-            case 3: withdraw(userId); break;
-            case 4: transactionHistory(userId); break;
-            case 5: System.out.println("Thank You! Exiting...");return;
-            default: System.out.println("Invalid choice");
-        }
-    }
-}
-
-private void checkBalance(int userId){
-    try{
-        String query = "SELECT balance FROM users WHERE id = ?";
-        PreparedStatement stmt = conn.prepareStatement(query);
-        stmt.setInt(1, userId);
-
-        ResultSet rs = stmt.executeQuery();
-        if(rs.next()){
-            System.out.println("Your Balance; "+rs.getDouble("balance"));
-        }
-    }catch(Exception e){
-        e.printStackTrace();
-    }
-}
-
-private void deposit(int userId){
-    try{
-        System.out.println("Enter amount to deposite: ");
-        double amount = sc.nextDouble();
-
-        String update = "UPDATE users SET balance = balance + ? WHERE id = ?";
-        PreparedStatement stmt = conn.prepareStatement(update);
-        stmt.setDouble(1, amount);
-        stmt.setInt(2, userId);
-        stmt.executeUpdate();
-
-        saveTransaction(userId, "Deposit", amount);
-        System.out.println("Deposit Successfull!");
-    }catch(Exception e){
-        e.printStackTrace();
-    }
-}
-
-private void withdraw(int userId){
-    try{
-        System.out.println("Enter amount to withdraw: ");
-        double amount = sc.nextDouble();
-
-        String check = "SELECT balance FROM users WHERE id = ?";
-        PreparedStatement stmt1 = conn.prepareStatement(check);
-        stmt1.setInt(1, userId);
-        ResultSet rs = stmt1.executeQuery();
-
-        if(rs.next()){
-            double balance = rs.getDouble("balance");
-            if(balance>=amount){
-                String update = "UPDATE users SET balance = balance - ? WHERE id = ?";
-                PreparedStatement stmt2 = conn.prepareStatement(update);
-                stmt2.setDouble(1, amount);
-                stmt2.setInt(2, userId);
-                stmt2.executeUpdate();
-
-                saveTransaction(userId, "Withdraw", amount);
-                System.out.println("Withdraw Successfull!");
-            }else{
-                System.out.println("Insufficient Balance!");
+        loginBtn.setOnAction(e -> {
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "SELECT * FROM users WHERE username=? AND pin=?")) {
+                stmt.setString(1, userField.getText().trim());
+                stmt.setString(2, pinField.getText().trim());
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        userId = rs.getInt("id");
+                        username = rs.getString("username");
+                        msg.setText("");
+                        stage.setScene(mainMenu());
+                    } else {
+                        msg.setText("❌ Invalid username or PIN");
+                    }
+                }
+            } catch (Exception ex) {
+                msg.setText("DB Error: " + ex.getMessage());
             }
+        });
+
+        VBox layout = new VBox(10, title, userField, pinField, loginBtn, msg);
+        layout.setAlignment(Pos.CENTER);
+        layout.setPadding(new Insets(25));
+        return new Scene(layout, 300, 250);
+    }
+
+    // ---------------------- MAIN MENU ----------------------
+    private Scene mainMenu() {
+        Label welcome = new Label("Welcome, " + username);
+        Button balBtn = new Button("Check Balance");
+        Button depBtn = new Button("Deposit");
+        Button witBtn = new Button("Withdraw");
+        Button histBtn = new Button("Transaction History");
+        Button exitBtn = new Button("Logout");
+
+        Label output = new Label();
+
+        balBtn.setOnAction(e -> checkBalance(output));
+        depBtn.setOnAction(e -> handleTransaction("Deposit"));
+        witBtn.setOnAction(e -> handleTransaction("Withdraw"));
+        histBtn.setOnAction(e -> showHistory());
+        exitBtn.setOnAction(e -> stage.setScene(loginScene()));
+
+        VBox box = new VBox(12, welcome, balBtn, depBtn, witBtn, histBtn, exitBtn, output);
+        box.setAlignment(Pos.CENTER);
+        box.setPadding(new Insets(25));
+        return new Scene(box, 350, 400);
+    }
+
+    // ---------------------- BALANCE CHECK ----------------------
+    private void checkBalance(Label output) {
+        try (PreparedStatement stmt = conn.prepareStatement(
+                "SELECT balance FROM users WHERE id=?")) {
+            stmt.setInt(1, userId);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next())
+                output.setText("💰 Balance: ₹ " + rs.getDouble("balance"));
+        } catch (Exception ex) {
+            output.setText("Error: " + ex.getMessage());
         }
-    }catch(Exception e){
-        e.printStackTrace();
     }
-}
 
-private void transactionHistory(int userId){
-    try{
-        String query = "SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT 5";
-        PreparedStatement stmt = conn.prepareStatement(query);
-        stmt.setInt(1, userId);
-        
-        ResultSet rs = stmt.executeQuery();
-        System.out.println("\n Last 5 Transactions: ");
-        while(rs.next()){
-            System.out.println(rs.getString("timestamp")+"|"+rs.getString("type")+"|"+rs.getDouble("amount"));
+    // ---------------------- DEPOSIT / WITHDRAW ----------------------
+    private void handleTransaction(String type) {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setHeaderText("Enter amount to " + type.toLowerCase());
+        dialog.setTitle(type);
+        dialog.showAndWait().ifPresent(input -> {
+            try {
+                double amt = Double.parseDouble(input);
+                if (amt <= 0) throw new Exception("Enter a positive amount");
+
+                double balance = 0;
+                try (PreparedStatement bal = conn.prepareStatement("SELECT balance FROM users WHERE id=?")) {
+                    bal.setInt(1, userId);
+                    ResultSet rs = bal.executeQuery();
+                    if (rs.next()) balance = rs.getDouble("balance");
+                }
+
+                if (type.equals("Withdraw") && amt > balance) {
+                    showAlert(Alert.AlertType.WARNING, "Insufficient balance!");
+                    return;
+                }
+
+                String update = type.equals("Deposit")
+                        ? "UPDATE users SET balance = balance + ? WHERE id=?"
+                        : "UPDATE users SET balance = balance - ? WHERE id=?";
+                try (PreparedStatement stmt = conn.prepareStatement(update)) {
+                    stmt.setDouble(1, amt);
+                    stmt.setInt(2, userId);
+                    stmt.executeUpdate();
+                }
+
+                try (PreparedStatement tx = conn.prepareStatement(
+                        "INSERT INTO transactions(user_id,type,amount) VALUES (?,?,?)")) {
+                    tx.setInt(1, userId);
+                    tx.setString(2, type);
+                    tx.setDouble(3, amt);
+                    tx.executeUpdate();
+                }
+
+                showAlert(Alert.AlertType.INFORMATION, type + " Successful: ₹" + amt);
+            } catch (Exception ex) {
+                showAlert(Alert.AlertType.ERROR, "Error: " + ex.getMessage());
+            }
+        });
+    }
+
+    // ---------------------- TRANSACTION HISTORY ----------------------
+    private void showHistory() {
+        StringBuilder sb = new StringBuilder();
+        try (PreparedStatement stmt = conn.prepareStatement(
+                "SELECT * FROM transactions WHERE user_id=? ORDER BY timestamp DESC LIMIT 5")) {
+            stmt.setInt(1, userId);
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                sb.append(rs.getString("timestamp")).append(" | ")
+                  .append(rs.getString("type")).append(" | ₹")
+                  .append(rs.getDouble("amount")).append("\n");
+            }
+        } catch (Exception ex) {
+            sb.append("Error: ").append(ex.getMessage());
         }
-    }catch(Exception e){
-        e.printStackTrace();
+        Alert a = new Alert(Alert.AlertType.INFORMATION, sb.toString(), ButtonType.OK);
+        a.setHeaderText("Last 5 Transactions");
+        a.showAndWait();
     }
-}
 
-private void saveTransaction(int userId, String type, double amount){
-    try{
-        String query = "INSERT INTO transactions (user_id, type, amount) VALUES (?,?,?)";
-        PreparedStatement stmt = conn.prepareStatement(query);
-        stmt.setInt(1,userId);
-        stmt.setString(2, type);
-        stmt.setDouble(3, amount);
-        stmt.executeUpdate();
-    }catch(Exception e){
-        e.printStackTrace();
+    private void showAlert(Alert.AlertType type, String msg) {
+        Alert a = new Alert(type, msg, ButtonType.OK);
+        a.showAndWait();
     }
-}
 
+    public static void main(String[] args) {
+        launch(args);
+    }
 }
